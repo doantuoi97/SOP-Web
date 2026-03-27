@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SOP Master List - QA Dashboard</title>
+    <!-- Các thư viện cần thiết để chạy React trực tiếp trên trình duyệt -->
     <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -29,7 +30,7 @@
         const { useState, useEffect, useMemo } = React;
 
         // ==============================================================================
-        // --- ⚙️ CẤU HÌNH CƠ SỞ DỮ LIỆU ĐÁM MÂY CỦA TƯƠI ĐÃ ĐƯỢC THAY VÀO ĐÂY ---
+        // --- ⚙️ CẤU HÌNH CƠ SỞ DỮ LIỆU ĐÁM MÂY (ĐỂ ĐỒNG BỘ DỮ LIỆU GIỮA NHIỀU MÁY TÍNH)
         // ==============================================================================
         const CUSTOM_FIREBASE_CONFIG = {
           apiKey: "AIzaSyCjVNmkUwyyNTCCTJzdzsGzJ9F2yUwMJ4E",
@@ -41,6 +42,7 @@
           measurementId: "G-QZX1Z1SSTN"
         }; 
 
+        // --- TỰ ĐỘNG NHẬN DIỆN MÔI TRƯỜNG HOẠT ĐỘNG ---
         const envConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         const activeConfig = CUSTOM_FIREBASE_CONFIG || envConfig;
         const isCloudActive = !!activeConfig;
@@ -60,6 +62,7 @@
             return collection(db, 'qa_sops_cloud');
         };
 
+        // --- DỮ LIỆU MẪU BAN ĐẦU ---
         const initialData = [
           { id: '1', code: 'SOP-KHO-004', name: 'Quy trình nhận nguyên liệu sản xuất', type: 'SOP', scope: 'GMP', dept: 'Warehouse', version: '1.0', effectiveDate: '2024-01-15', reviewDate: '2026-01-15', status: 'Obsolete', link: '', notes: 'Phiên bản đầu tiên' },
           { id: '2', code: 'SOP-KHO-004', name: 'Quy trình nhận nguyên liệu sản xuất', type: 'SOP', scope: 'GMP', dept: 'Warehouse', version: '2.0', effectiveDate: '2026-02-01', reviewDate: '2028-02-01', status: 'Effective', link: 'https://docs.google.com/document/d/1B_8j.../edit', notes: 'Cập nhật theo quy định mới' },
@@ -68,10 +71,14 @@
         ];
 
         function App() {
+          // --- QUẢN LÝ TRẠNG THÁI DỮ LIỆU ---
           const [user, setUser] = useState(null);
-          const [sops, setSops] = useState([]);
+          const [sops, setSops] = useState(() => {
+            const saved = localStorage.getItem('qa_sop_master_list');
+            return saved ? JSON.parse(saved) : initialData;
+          });
           const [isCloudLoading, setIsCloudLoading] = useState(isCloudActive);
-          const [cloudError, setCloudError] = useState('');
+          const [cloudError, setCloudError] = useState(''); // Thêm state để hiển thị lỗi Firebase ra màn hình
 
           const [searchTerm, setSearchTerm] = useState('');
           const [filters, setFilters] = useState({ type: 'All', scope: 'All', dept: 'All', status: 'All' });
@@ -92,26 +99,39 @@
           const emptyForm = { code: '', name: '', type: 'SOP', scope: 'GMP', dept: 'QA', version: '1.0', effectiveDate: '', reviewDate: '', status: 'Draft', link: '', notes: '' };
           const [formData, setFormData] = useState(emptyForm);
 
+          // --- 1. TỰ ĐỘNG CHUYỂN VỀ CHẾ ĐỘ OFFLINE NẾU KHÔNG CÓ CLOUD ---
           useEffect(() => {
-            if (!isCloudActive || user) return;
+            if (!isCloudActive) {
+              localStorage.setItem('qa_sop_master_list', JSON.stringify(sops));
+            }
+          }, [sops]);
+
+          // --- 2. ĐĂNG NHẬP VÀ XỬ LÝ LỖI (auth/configuration-not-found) ---
+          useEffect(() => {
+            if (!isCloudActive) return;
             const initAuth = async () => {
               try {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token && !CUSTOM_FIREBASE_CONFIG) {
                   await signInWithCustomToken(auth, __initial_auth_token);
                 } else {
-                  await signInAnonymously(auth);
+                  await signInAnonymously(auth); // Cho phép truy cập vào Firebase cá nhân của user
                 }
               } catch (error) { 
                 console.error("Lỗi xác thực Đám mây:", error); 
                 setIsCloudLoading(false);
-                setCloudError(`Lỗi xác thực: ${error.message}. Kiểm tra Anonymous Sign-in trên Firebase.`);
+                if (error.code === 'auth/configuration-not-found' || error.code === 'auth/operation-not-allowed') {
+                    setCloudError("Lỗi: Bạn chưa bật 'Đăng nhập Ẩn danh' (Anonymous) trên Firebase.");
+                } else {
+                    setCloudError(`Lỗi kết nối Cloud: ${error.message}`);
+                }
               }
             };
             initAuth();
             const unsubscribe = onAuthStateChanged(auth, setUser);
             return () => unsubscribe();
-          }, [user]);
+          }, []);
 
+          // --- 3. TẢI DỮ LIỆU THỜI GIAN THỰC TỪ CLOUD (VÀ XỬ LÝ LỖI QUYỀN) ---
           useEffect(() => {
             if (!isCloudActive || !user) return;
             const sopsRef = getDbCollection();
@@ -120,14 +140,20 @@
               snapshot.forEach(doc => { data.push({ id: doc.id, ...doc.data() }); });
               setSops(data);
               setIsCloudLoading(false);
+              setCloudError('');
             }, (error) => {
               console.error("Lỗi khi tải dữ liệu Cloud:", error);
               setIsCloudLoading(false);
-              setCloudError(`Lỗi tải dữ liệu: ${error.message}. Kiểm tra Rules Firestore.`);
+              if (error.code === 'permission-denied') {
+                  setCloudError("Lỗi: Firebase từ chối quyền truy cập (Bạn chưa cập nhật Rules Firestore).");
+              } else {
+                  setCloudError(`Lỗi Firestore: ${error.message}`);
+              }
             });
             return () => unsubscribe();
           }, [user]);
 
+          // --- LOGIC: KIỂM SOÁT PHIÊN BẢN ---
           const latestSops = useMemo(() => {
             const grouped = {};
             sops.forEach(sop => {
@@ -142,29 +168,35 @@
             return Object.values(grouped);
           }, [sops]);
 
+          // --- TÍNH TOÁN THỐNG KÊ ---
           const stats = useMemo(() => {
             const now = new Date();
             const next30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
             let gmpCount = 0; let gdpCount = 0; let gspCount = 0;
             latestSops.forEach(s => {
               if (s.scope && s.scope.includes('GMP')) gmpCount++;
               if (s.scope && s.scope.includes('GDP')) gdpCount++;
               if (s.scope && s.scope.includes('GSP')) gspCount++;
             });
+
             return {
               total: latestSops.length,
               effective: latestSops.filter(s => s.status === 'Effective').length,
               draft: latestSops.filter(s => s.status === 'Draft').length,
               obsolete: latestSops.filter(s => s.status === 'Obsolete').length,
-              gmp: gmpCount, gdp: gdpCount, gsp: gspCount,
+              gmp: gmpCount,
+              gdp: gdpCount,
+              gsp: gspCount,
               reviewDue: latestSops.filter(s => s.reviewDate && new Date(s.reviewDate) > now && new Date(s.reviewDate) <= next30Days).length,
               expired: latestSops.filter(s => s.reviewDate && new Date(s.reviewDate) < now).length
             };
           }, [latestSops]);
 
+          // --- LỌC DỮ LIỆU ---
           const filteredSops = useMemo(() => {
             return latestSops.filter(sop => {
-              const matchSearch = (sop.code || '').toLowerCase().includes(searchTerm.toLowerCase()) || (sop.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+              const matchSearch = sop.code.toLowerCase().includes(searchTerm.toLowerCase()) || sop.name.toLowerCase().includes(searchTerm.toLowerCase());
               const matchType = filters.type === 'All' || sop.type === filters.type;
               const matchScope = filters.scope === 'All' || sop.scope === filters.scope;
               const matchDept = filters.dept === 'All' || sop.dept === filters.dept;
@@ -173,55 +205,94 @@
             });
           }, [latestSops, searchTerm, filters]);
 
-          useEffect(() => { setCurrentPage(1); }, [searchTerm, filters]);
+          // --- LOGIC PHÂN TRANG ---
+          useEffect(() => {
+            setCurrentPage(1);
+          }, [searchTerm, filters]);
+
           const totalPages = Math.ceil(filteredSops.length / itemsPerPage);
           const indexOfLastItem = currentPage * itemsPerPage;
           const indexOfFirstItem = indexOfLastItem - itemsPerPage;
           const currentSops = filteredSops.slice(indexOfFirstItem, indexOfLastItem);
 
+          // --- HANDLERS LƯU & XÓA LÊN CLOUD/LOCAL ---
           const handleSaveSOP = async (e) => {
             e.preventDefault();
-            if (!user) return;
             setFormError('');
-            try {
-              const sopsRef = getDbCollection();
-              if (formData.status === 'Effective') {
-                sops.forEach(s => {
-                  if (s.code === formData.code && s.id !== formData.id) {
-                    setDoc(doc(sopsRef, s.id), { ...s, status: 'Obsolete' });
-                  }
-                });
-              }
-              const isAddingNew = modalMode === 'add' || modalMode === 'revise';
-              if (isAddingNew && sops.some(s => s.code === formData.code)) {
-                 setFormError('Mã SOP đã tồn tại! Dùng "Revise" để tạo bản mới.');
-                 return;
-              }
-              if (isAddingNew) {
-                  const newId = Date.now().toString();
-                  await setDoc(doc(sopsRef, newId), { ...formData, id: newId });
-              } else {
-                  await setDoc(doc(sopsRef, formData.id), formData);
-              }
-              setIsModalOpen(false);
-            } catch (error) { console.error(error); setFormError("Lỗi lưu dữ liệu lên Cloud."); }
+
+            let newSops = [...sops];
+            if (formData.status === 'Effective') {
+              newSops = newSops.map(s => (s.code === formData.code && s.id !== formData.id) ? { ...s, status: 'Obsolete' } : s);
+            }
+
+            const isAddingNew = modalMode === 'add' || modalMode === 'revise';
+            if (isAddingNew && sops.some(s => s.code === formData.code)) {
+               setFormError('Mã SOP (Doc Code) đã tồn tại! Vui lòng sử dụng tính năng "Sửa đổi (Revise)" để tạo phiên bản mới.');
+               return;
+            }
+
+            if (isCloudActive) {
+                if (!user) {
+                    setFormError("Không thể lưu: Bạn chưa kết nối được với Đám mây (Kiểm tra lại cấu hình Authentication).");
+                    return;
+                }
+                try {
+                    const sopsRef = getDbCollection();
+                    if (formData.status === 'Effective') {
+                        sops.forEach(s => {
+                            if (s.code === formData.code && s.id !== formData.id) {
+                                setDoc(doc(sopsRef, s.id), { ...s, status: 'Obsolete' });
+                            }
+                        });
+                    }
+                    if (isAddingNew) {
+                        const newId = Date.now().toString();
+                        await setDoc(doc(sopsRef, newId), { ...formData, id: newId });
+                    } else {
+                        await setDoc(doc(sopsRef, formData.id), formData);
+                    }
+                    setIsModalOpen(false);
+                    setFormError('');
+                } catch (error) {
+                    console.error("Lỗi khi lưu lên Cloud:", error);
+                    setFormError("Lỗi kết nối với Cloud Server. Kiểm tra lại cấu hình Database Firebase.");
+                }
+            } else {
+                // Chế độ Offline LocalStorage
+                let finalSops = isAddingNew 
+                    ? [...newSops, { ...formData, id: Date.now().toString() }]
+                    : newSops.map(s => s.id === formData.id ? formData : s);
+                setSops(finalSops);
+                setIsModalOpen(false);
+            }
           };
 
           const deleteSOP = async (id) => {
             if (window.confirm('Bạn có chắc chắn muốn xóa bản ghi này?')) {
-              if (!user) return;
-              try { await deleteDoc(doc(getDbCollection(), id));
-              } catch (error) { console.error(error); alert("Lỗi xóa dữ liệu."); }
+              if (isCloudActive) {
+                  if (!user) return;
+                  try {
+                      await deleteDoc(doc(getDbCollection(), id));
+                  } catch (error) { console.error(error); alert("Lỗi khi xóa dữ liệu khỏi Cloud."); }
+              } else {
+                  setSops(sops.filter(s => s.id !== id));
+              }
             }
           };
 
+          // --- TẠO DỮ LIỆU MẪU LÊN BỘ NHỚ ---
           const seedInitialData = async () => {
-            if (!user) return;
-            setIsCloudLoading(true);
-            const sopsRef = getDbCollection();
-            try { await Promise.all(initialData.map(data => setDoc(doc(sopsRef, data.id), data)));
-            } catch (error) { console.error(error); }
-            setIsCloudLoading(false);
+            if (isCloudActive) {
+                if (!user) return;
+                setIsCloudLoading(true);
+                const sopsRef = getDbCollection();
+                try {
+                    await Promise.all(initialData.map(data => setDoc(doc(sopsRef, data.id), data)));
+                } catch (error) { console.error("Lỗi tạo dữ liệu", error); }
+                setIsCloudLoading(false);
+            } else {
+                setSops(initialData);
+            }
           };
 
           const openAddModal = () => { setFormData(emptyForm); setModalMode('add'); setFormError(''); setIsModalOpen(true); };
@@ -229,17 +300,39 @@
           const openReviseModal = (sop) => {
             let nextVersion = '1.0';
             if (!isNaN(parseFloat(sop.version))) nextVersion = (Math.floor(parseFloat(sop.version)) + 1).toFixed(1);
-            setFormData({ ...sop, id: '', version: nextVersion, status: 'Draft', effectiveDate: '', notes: 'Soát xét v' + sop.version });
+            setFormData({ ...sop, id: '', version: nextVersion, status: 'Draft', effectiveDate: '', notes: 'Soát xét và cập nhật từ v' + sop.version });
             setModalMode('revise'); setFormError(''); setIsModalOpen(true);
           };
-          const openPreviewModal = (sop) => { setPreviewData(sop); setIsPreviewModalOpen(true); };
-          const exportCSV = () => { /* Logic export cũ */ };
-          const getEmbedLink = (url) => { /* Logic embed link cũ */ };
+
+          const openPreviewModal = (sop) => {
+            setPreviewData(sop);
+            setIsPreviewModalOpen(true);
+          };
+
+          const exportCSV = () => {
+            const headers = ['Doc Code', 'Document Name', 'Type', 'Scope', 'Department', 'Version', 'Effective Date', 'Review Due', 'Status', 'Notes', 'Link'];
+            const rows = filteredSops.map(s => [s.code, `"${s.name}"`, s.type, s.scope, s.dept, s.version, s.effectiveDate, s.reviewDate, s.status, `"${s.notes}"`, s.link]);
+            // Thêm BOM để không bị lỗi font tiếng Việt khi mở bằng Excel
+            const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + [headers.join(','), ...rows.map(e => e.join(','))].join("\n");
+            const link = document.createElement("a");
+            link.href = encodeURI(csvContent);
+            link.download = `SOP_Master_List_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+          };
+
+          // Chuyển đổi link Google Drive sang chế độ Preview để nhúng iframe
+          const getEmbedLink = (url) => {
+            if (!url) return null;
+            if (url.includes('docs.google.com') && (url.includes('/edit') || url.includes('/view'))) {
+              return url.replace(/\/(edit|view).*$/, '/preview');
+            }
+            return url;
+          };
 
           const StatCard = ({ iconClass, title, value, color, bgCol }) => (
-            <div className={`bg-white p-4 rounded-xl border border-gray-100 flex flex-col items-center justify-center text-center shadow-sm print:hidden`}>
+            <div className={`bg-white p-4 rounded-xl border border-gray-100 flex flex-col items-center justify-center text-center shadow-sm transition-transform hover:scale-105 print:hidden`}>
               <div className={`p-3 rounded-full ${bgCol} ${color} mb-3`}><i className={`${iconClass} text-2xl`}></i></div>
-              <div className="text-3xl font-bold text-gray-800 leadeing-none mb-1">{value}</div>
+              <div className="text-3xl font-bold text-gray-800 leading-none mb-1">{value}</div>
               <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{title}</div>
             </div>
           );
@@ -252,80 +345,55 @@
             return "text-gray-600";
           };
 
-          // --- COMPONENT THẺ SOP DÀNH CHO ĐIỆN THOẠI ---
-          const SopCard = ({ sop }) => (
-            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-3 group">
-              {/* Header: Mã và Trạng thái */}
-              <div className="flex justify-between items-center gap-2">
-                <span className="text-lg font-bold text-blue-800 break-words">{sop.code} <span className="text-sm font-bold text-slate-700">v{sop.version}</span></span>
-                <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap ${
-                  sop.status === 'Effective' ? 'bg-emerald-100 text-emerald-700' :
-                  sop.status === 'Draft' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'
-                }`}>
-                  {sop.status === 'Effective' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></span>}
-                  {sop.status}
-                </span>
-              </div>
-              
-              {/* Thân: Tên quy trình */}
-              <div className="font-semibold text-slate-800 leading-snug">{sop.name}</div>
-              
-              {/* Chi tiết phụ: Loại, Phạm vi, Bộ phận */}
-              <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-100">
-                <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded">{sop.type}</span>
-                <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2 py-1 rounded-md border border-teal-200">{sop.scope}</span>
-                <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2 py-1 rounded">{sop.dept}</span>
-              </div>
-              
-              {/* Footer: Ngày tháng và Action */}
-              <div className="grid grid-cols-2 gap-3 pt-3 mt-1 border-t border-gray-100">
-                <div className="text-xs text-slate-500">
-                  <div className="font-bold text-slate-400 uppercase tracking-wider mb-0.5">Hiệu lực</div>
-                  <div className="font-medium text-slate-700">{sop.effectiveDate || '-'}</div>
-                </div>
-                <div className={`text-xs ${getReviewStatusColor(sop.reviewDate)}`}>
-                  <div className="font-bold text-slate-400 uppercase tracking-wider mb-0.5">Hạn soát xét</div>
-                  <div className="font-bold">{sop.reviewDate || '-'}</div>
-                </div>
-              </div>
-              
-              {/* Các nút thao tác (Hiện khi mobile hoặc hover) */}
-              <div className="flex justify-end gap-2.5 pt-3 mt-1 border-t border-gray-100 print:hidden">
-                <button onClick={() => openPreviewModal(sop)} className="text-sm px-3 py-1.5 bg-indigo-50 text-indigo-700 font-semibold rounded-lg" title="Preview"><i className="fa-solid fa-eye mr-1.5"></i>Xem</button>
-                <button onClick={() => { setHistoryCode(sop.code); setIsHistoryModalOpen(true); }} className="text-sm px-3 py-1.5 bg-blue-50 text-blue-700 font-semibold rounded-lg" title="History"><i className="fa-solid fa-clock-rotate-left mr-1.5"></i>Lịch sử</button>
-                <button onClick={() => openEditModal(sop)} className="text-sm px-3 py-1.5 bg-emerald-50 text-emerald-700 font-semibold rounded-lg" title="Edit"><i className="fa-solid fa-pen mr-1.5"></i>Sửa</button>
-                <button onClick={() => openReviseModal(sop)} className="text-sm px-3 py-1.5 bg-purple-50 text-purple-700 font-semibold rounded-lg" title="Revise"><i className="fa-solid fa-copy mr-1.5"></i>Bản mới</button>
-              </div>
-            </div>
-          );
-
           return (
             <div className="min-h-screen bg-slate-50">
+              
               {/* --- KHU VỰC CỐ ĐỊNH Ở TRÊN (STICKY TOP) --- */}
               <div className="sticky top-0 z-40 bg-slate-50 px-4 md:px-8 pt-4 md:pt-8 pb-4 shadow-md border-b border-gray-200 print:relative print:shadow-none print:border-none print:p-0">
                 <div className="max-w-[1600px] mx-auto">
                   
                   {/* HEADER */}
-                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-3">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
                     <div>
-                      <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">SOP Master List</h1>
+                      <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                        SOP Master List
+                      </h1>
                       <div className="text-sm font-medium text-slate-500 mt-1 flex items-center gap-2">
                         {isCloudActive ? (
-                            <> <i className={`fa-solid fa-cloud ${isCloudLoading ? 'text-amber-500 animate-pulse' : 'text-emerald-500'}`}></i> {isCloudLoading ? 'Đang kết nối Đám mây...' : 'Đã đồng bộ hóa Cloud'} </>
+                            cloudError ? (
+                                <>
+                                    <i className="fa-solid fa-triangle-exclamation text-red-500"></i>
+                                    <span className="text-red-500 font-bold">Lỗi đồng bộ (Xem bên dưới)</span>
+                                </>
+                            ) : (
+                                <>
+                                    <i className={`fa-solid fa-cloud ${isCloudLoading ? 'text-amber-500 animate-pulse' : 'text-emerald-500'}`}></i>
+                                    {isCloudLoading ? 'Đang kết nối Đám mây...' : 'Đã đồng bộ hóa Cloud'}
+                                </>
+                            )
                         ) : (
-                            <> <i className="fa-solid fa-hard-drive text-slate-400"></i> Lưu trữ cục bộ (Offline) </>
+                            <>
+                                <i className="fa-solid fa-hard-drive text-slate-400"></i>
+                                Lưu trữ cục bộ (Chế độ Offline)
+                            </>
                         )}
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-3 mt-1 md:mt-0 print:hidden w-full md:w-auto">
-                      <button onClick={exportCSV} className="flex-1 md:flex-initial flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"> <i className="fa-solid fa-download"></i> <span className="hidden sm:inline">Export CSV</span> </button>
-                      <button onClick={() => window.print()} className="flex-1 md:flex-initial flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"> <i className="fa-solid fa-print"></i> <span className="hidden sm:inline">Print</span> </button>
-                      <button onClick={openAddModal} className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 transition-colors shadow-md"> <i className="fa-solid fa-plus"></i> Add SOP </button>
+                    <div className="flex gap-3 mt-4 md:mt-0 print:hidden">
+                      <button onClick={exportCSV} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
+                        <i className="fa-solid fa-download"></i> Export CSV
+                      </button>
+                      <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
+                        <i className="fa-solid fa-print"></i> Print
+                      </button>
+                      <button onClick={openAddModal} className="flex items-center gap-2 px-4 py-2 bg-blue-700 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 transition-colors shadow-md">
+                        <i className="fa-solid fa-plus"></i> Add SOP
+                      </button>
                     </div>
                   </div>
 
-                  {/* DASHBOARD STATS - ẨN TRÊN DI ĐỘNG, HIỆN TRÊN MÁY TÍNH */}
-                  <div className="hidden lg:grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-4 mb-6 print:hidden">
+                  {/* DASHBOARD STATS */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-4 mb-6 print:hidden">
                     <StatCard iconClass="fa-solid fa-file-lines" title="Total SOPs" value={stats.total} color="text-blue-600" bgCol="bg-blue-50" />
                     <StatCard iconClass="fa-solid fa-circle-check" title="Effective" value={stats.effective} color="text-emerald-600" bgCol="bg-emerald-50" />
                     <StatCard iconClass="fa-solid fa-clock" title="Drafts" value={stats.draft} color="text-amber-600" bgCol="bg-amber-50" />
@@ -338,41 +406,43 @@
                   </div>
 
                   {/* TOOLBAR */}
-                  <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col lg:flex-row gap-4 print:hidden">
+                  <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row gap-4 print:hidden">
                     <div className="flex-1 relative">
                       <i className="fa-solid fa-magnifying-glass absolute left-4 top-3.5 text-gray-400"></i>
-                      <input type="text" placeholder="Tìm kiếm mã hoặc tên tài liệu..." className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                      <input 
+                        type="text" 
+                        placeholder="Tìm kiếm mã hoặc tên tài liệu (Search)..." 
+                        className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-gray-700" value={filters.type} onChange={e => setFilters({...filters, type: e.target.value})}> <option value="All">All Types</option><option>SOP</option><option>WI</option><option>FORM</option><option>POLICY</option> </select>
-                      <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-gray-700" value={filters.scope} onChange={e => setFilters({...filters, scope: e.target.value})}> <option value="All">All Scope</option><option>GMP</option><option>GDP</option><option>GSP</option><option>GMP+GSP+GDP</option> </select>
-                      <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-gray-700" value={filters.dept} onChange={e => setFilters({...filters, dept: e.target.value})}> <option value="All">All Depts</option><option>QA</option><option>QC</option><option>Warehouse</option><option>Logistics</option><option>Production</option> </select>
-                      <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-gray-700" value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})}> <option value="All">All Status</option><option>Effective</option><option>Draft</option><option>Obsolete</option> </select>
+                    <div className="flex flex-wrap gap-3">
+                      <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-gray-700 outline-none focus:ring-2 focus:ring-blue-500" value={filters.type} onChange={e => setFilters({...filters, type: e.target.value})}>
+                        <option value="All">All Types</option><option>SOP</option><option>WI</option><option>FORM</option><option>POLICY</option>
+                      </select>
+                      <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-gray-700 outline-none focus:ring-2 focus:ring-blue-500" value={filters.scope} onChange={e => setFilters({...filters, scope: e.target.value})}>
+                        <option value="All">All Scope</option><option>GMP</option><option>GDP</option><option>GSP</option><option>GMP+GSP+GDP</option>
+                      </select>
+                      <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-gray-700 outline-none focus:ring-2 focus:ring-blue-500" value={filters.dept} onChange={e => setFilters({...filters, dept: e.target.value})}>
+                        <option value="All">All Depts</option><option>QA</option><option>Warehouse</option><option>Logistics</option><option>Production</option><option>QC</option>
+                      </select>
+                      <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-gray-700 outline-none focus:ring-2 focus:ring-blue-500" value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})}>
+                        <option value="All">All Status</option><option>Effective</option><option>Draft</option><option>Obsolete</option>
+                      </select>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* --- KHU VỰC HIỂN THỊ DỮ LIỆU --- */}
+              {/* --- KHU VỰC BẢNG DỮ LIỆU --- */}
               <div className="max-w-[1600px] mx-auto p-4 md:p-8">
-                
-                {/* --- CHẾ ĐỘ 1: THẺ (CARDS) - CHỈ HIỆN TRÊN ĐIỆN THOẠI (<1024px) --- */}
-                <div className="block lg:hidden space-y-4">
-                  {currentSops.length > 0 ? currentSops.map(sop => (
-                    <SopCard key={sop.id} sop={sop} />
-                  )) : (
-                    <div className="bg-white p-12 rounded-2xl border border-gray-100 text-center text-slate-500 font-medium shadow-sm">
-                        {isCloudLoading ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : cloudError ? cloudError : 'Không tìm thấy tài liệu phù hợp.'}
-                    </div>
-                  )}
-                </div>
-
-                {/* --- CHẾ ĐỘ 2: BẢNG (TABLE) - CHỈ HIỆN TRÊN MÁY TÍNH (>=1024px) --- */}
-                <div className="hidden lg:block bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                {/* MAIN TABLE */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                   <div className="overflow-x-auto min-h-[400px]">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-bold border-b border-gray-200 whitespace-nowrap">
+                        <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider font-bold border-b border-gray-200">
                           <th className="px-6 py-4">Doc Code</th>
                           <th className="px-6 py-4 min-w-[250px]">Document Name</th>
                           <th className="px-6 py-4 text-center">Type</th>
@@ -380,76 +450,404 @@
                           <th className="px-6 py-4">Dept</th>
                           <th className="px-6 py-4 text-center">Ver</th>
                           <th className="px-6 py-4">Effective</th>
-                          <th className="px-6 py-4 whitespace-nowrap">Review Due</th>
+                          <th className="px-6 py-4">Review Due</th>
                           <th className="px-6 py-4 text-center">Status</th>
                           <th className="px-6 py-4 text-center print:hidden">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="text-sm divide-y divide-gray-100">
                         {currentSops.length > 0 ? currentSops.map(sop => (
-                          <tr key={sop.id} className="hover:bg-blue-50/50 transition-colors group whitespace-nowrap">
-                            <td className="px-6 py-4 font-bold text-blue-800">{sop.code}</td>
-                            <td className="px-6 py-4 font-medium text-slate-800 whitespace-normal">{sop.name}</td>
-                            <td className="px-6 py-4 text-center"><span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded">{sop.type}</span></td>
-                            <td className="px-6 py-4 text-center"><span className="text-xs font-bold px-2 py-1 rounded-md border border-teal-200 bg-teal-50 text-teal-700">{sop.scope}</span></td>
+                          <tr key={sop.id} className="hover:bg-blue-50/50 transition-colors group">
+                            <td className="px-6 py-4 font-bold text-blue-800 whitespace-nowrap">{sop.code}</td>
+                            <td className="px-6 py-4 font-medium text-slate-800">{sop.name}</td>
+                            <td className="px-6 py-4 text-center">
+                              <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded">{sop.type}</span>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <span className={`text-xs font-bold px-2 py-1 rounded-md border ${
+                                sop.scope === 'GMP+GSP+GDP' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                sop.scope === 'GSP' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                sop.scope === 'GMP' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-teal-50 text-teal-700 border-teal-200'
+                              }`}>{sop.scope}</span>
+                            </td>
                             <td className="px-6 py-4 text-slate-600 font-medium">{sop.dept}</td>
-                            <td className="px-6 py-4 text-center font-bold text-slate-700 whitespace-nowrap">v{sop.version}</td>
+                            <td className="px-6 py-4 text-center font-bold text-slate-700">v{sop.version}</td>
                             <td className="px-6 py-4 text-slate-500">{sop.effectiveDate || '-'}</td>
-                            <td className={`px-6 py-4 font-semibold ${getReviewStatusColor(sop.reviewDate)}`}>{sop.reviewDate || '-'}</td>
-                            <td className="px-6 py-4 text-center"><span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-full text-xs font-bold ${
+                            <td className={`px-6 py-4 whitespace-nowrap ${getReviewStatusColor(sop.reviewDate)}`}>
+                              {sop.reviewDate || '-'}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-full text-xs font-bold ${
                                 sop.status === 'Effective' ? 'bg-emerald-100 text-emerald-700' :
                                 sop.status === 'Draft' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'
-                              }`}>{sop.status}</span></td>
-                            <td className="px-6 py-4 text-center print:hidden">
-                              <div className="flex items-center justify-center gap-2 lg:opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => openPreviewModal(sop)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md" title="Preview"><i className="fa-solid fa-eye"></i></button>
-                                <button onClick={() => { setHistoryCode(sop.code); setIsHistoryModalOpen(true); }} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md" title="History"><i className="fa-solid fa-clock-rotate-left"></i></button>
-                                <button onClick={() => openEditModal(sop)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md" title="Edit"><i className="fa-solid fa-pen"></i></button>
-                                <button onClick={() => openReviseModal(sop)} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-md" title="Revise"><i className="fa-solid fa-copy"></i></button>
+                              }`}>
+                                {sop.status === 'Effective' && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5"></span>}
+                                {sop.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-center whitespace-nowrap print:hidden">
+                              <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => openPreviewModal(sop)} className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md" title="Xem trước tài liệu (Preview)">
+                                  <i className="fa-solid fa-eye"></i>
+                                </button>
+                                <button onClick={() => { setHistoryCode(sop.code); setIsHistoryModalOpen(true); }} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md" title="Lịch sử phiên bản (Version History)">
+                                  <i className="fa-solid fa-clock-rotate-left"></i>
+                                </button>
+                                <button onClick={() => openEditModal(sop)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md" title="Chỉnh sửa thông tin (Edit)">
+                                  <i className="fa-solid fa-pen"></i>
+                                </button>
+                                <button onClick={() => openReviseModal(sop)} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-md" title="Soát xét tài liệu (Revise)">
+                                  <i className="fa-solid fa-copy"></i>
+                                </button>
                               </div>
                             </td>
                           </tr>
                         )) : (
-                          <tr><td colSpan="10" className="px-6 py-12 text-center text-slate-500 font-medium">{isCloudLoading ? <i className="fa-solid fa-spinner fa-spin mr-2"></i> : 'Không tìm thấy tài liệu phù hợp.'}</td></tr>
+                          <tr>
+                            <td colSpan="10" className="px-6 py-12 text-center text-slate-500 font-medium">
+                              {cloudError ? (
+                                 <div className="flex flex-col items-center max-w-lg mx-auto text-red-600 bg-red-50 p-6 rounded-xl border border-red-200">
+                                    <i className="fa-solid fa-triangle-exclamation text-4xl mb-3"></i>
+                                    <p className="font-bold text-lg mb-1">Cấu hình Firebase chưa hoàn tất!</p>
+                                    <p className="text-sm mb-4 text-red-500">{cloudError}</p>
+                                    <div className="text-sm font-medium text-slate-700 text-left bg-white p-4 rounded-lg w-full shadow-sm border border-red-100">
+                                        <p className="font-bold mb-2 text-red-800">Cách khắc phục trên Firebase Console:</p>
+                                        <ol className="list-decimal pl-5 space-y-2">
+                                            <li>Vào mục <b>Authentication</b> &gt; tab <b>Sign-in method</b> &gt; Bật chế độ <b>Anonymous</b>.</li>
+                                            <li>Vào mục <b>Firestore Database</b> &gt; tab <b>Rules</b> &gt; Sửa dòng allow read, write thành: <code className="block bg-slate-100 p-1 mt-1 font-mono text-xs">allow read, write: if true;</code></li>
+                                        </ol>
+                                    </div>
+                                 </div>
+                              ) : isCloudActive ? (
+                                isCloudLoading ? (
+                                  <span><i className="fa-solid fa-spinner fa-spin mr-2"></i> Đang kết nối Đám mây...</span>
+                                ) : (
+                                  <div className="flex flex-col items-center">
+                                    <div className="text-slate-300 mb-3"><i className="fa-solid fa-cloud text-4xl"></i></div>
+                                    <p>Hệ thống Đám mây hiện chưa có tài liệu nào.</p>
+                                    {searchTerm === '' && filters.type === 'All' && filters.scope === 'All' && filters.dept === 'All' && filters.status === 'All' && (
+                                      <button onClick={seedInitialData} className="mt-4 px-5 py-2.5 bg-blue-100 text-blue-700 rounded-lg text-sm font-bold hover:bg-blue-200 transition-colors">
+                                        <i className="fa-solid fa-cloud-arrow-up mr-2"></i> Tải 4 SOP mẫu lên Cloud
+                                      </button>
+                                    )}
+                                  </div>
+                                )
+                              ) : (
+                                <div className="flex flex-col items-center">
+                                  <div className="text-slate-300 mb-3"><i className="fa-solid fa-hard-drive text-4xl"></i></div>
+                                  <p>Danh mục hiện đang trống (Bộ nhớ Offline).</p>
+                                  {searchTerm === '' && filters.type === 'All' && filters.scope === 'All' && filters.dept === 'All' && filters.status === 'All' && (
+                                    <button onClick={seedInitialData} className="mt-4 px-5 py-2.5 bg-slate-200 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-300 transition-colors">
+                                      <i className="fa-solid fa-rotate-left mr-2"></i> Khôi phục dữ liệu mẫu
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
                         )}
                       </tbody>
                     </table>
                   </div>
-                </div>
-
-                {/* GIAO DIỆN PHÂN TRANG (HIỆN TRÊN mobile) */}
-                <div className="bg-slate-50 px-6 py-4 mt-6 rounded-xl border border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden shadow-inner">
-                    <div className="text-sm text-slate-500"> Hiển thị <span className="font-bold text-slate-700">{filteredSops.length === 0 ? 0 : indexOfFirstItem + 1}</span> đến <span className="font-bold text-slate-700">{Math.min(indexOfLastItem, filteredSops.length)}</span> của <span className="font-bold text-slate-700">{filteredSops.length}</span> SOPs </div>
+                  
+                  {/* --- GIAO DIỆN PHÂN TRANG (PAGINATION) --- */}
+                  <div className="bg-slate-50 px-6 py-4 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4 print:hidden">
+                    <div className="text-sm text-slate-500">
+                      Hiển thị <span className="font-bold text-slate-700">{filteredSops.length === 0 ? 0 : indexOfFirstItem + 1}</span> đến <span className="font-bold text-slate-700">{Math.min(indexOfLastItem, filteredSops.length)}</span> trong tổng số <span className="font-bold text-slate-700">{filteredSops.length}</span> tài liệu
+                    </div>
                     {totalPages > 1 && (
-                      <div className="flex items-center gap-1.5 w-full sm:w-auto justify-center sm:justify-start">
-                        <button onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1} className="px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-slate-600 bg-white disabled:opacity-50 disabled:cursor-not-allowed">Trước</button>
-                        <div className="flex gap-1.5 max-w-[200px] overflow-x-auto px-1">
-                          {[...Array(totalPages)].map((_, i) => (
-                              <button key={i} onClick={() => setCurrentPage(i + 1)} className={`min-w-[32px] px-2 py-1.5 border rounded-md text-sm font-medium ${currentPage === i + 1 ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'border-gray-300 text-slate-600 bg-white hover:bg-slate-50'}`}>{i + 1}</button>
-                          ))}
+                      <div className="flex items-center gap-1">
+                        <button 
+                          onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} 
+                          disabled={currentPage === 1}
+                          className="px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Trước
+                        </button>
+                        
+                        <div className="hidden sm:flex gap-1">
+                          {[...Array(totalPages)].map((_, i) => {
+                            if (totalPages > 7 && (i + 1 < currentPage - 1 || i + 1 > currentPage + 1) && i !== 0 && i !== totalPages - 1) {
+                              if (i + 1 === currentPage - 2 || i + 1 === currentPage + 2) return <span key={`ellipsis-${i}`} className="px-2 py-1.5 text-slate-400">...</span>;
+                              return null;
+                            }
+                            return (
+                              <button 
+                                key={i} 
+                                onClick={() => setCurrentPage(i + 1)}
+                                className={`min-w-[32px] px-2 py-1.5 border rounded-md text-sm font-medium transition-colors ${currentPage === i + 1 ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'border-gray-300 text-slate-600 hover:bg-slate-100'}`}
+                              >
+                                {i + 1}
+                              </button>
+                            );
+                          })}
                         </div>
-                        <button onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages} className="px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-slate-600 bg-white disabled:opacity-50 disabled:cursor-not-allowed">Sau</button>
+                        <div className="sm:hidden text-sm font-medium text-slate-600 px-2">
+                           Trang {currentPage} / {totalPages}
+                        </div>
+
+                        <button 
+                          onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} 
+                          disabled={currentPage === totalPages}
+                          className="px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                          Sau
+                        </button>
                       </div>
                     )}
                   </div>
+                </div>
               </div>
 
-              {/* ... CÁC MODAL (PREVIEW, ADD, HISTORY) GIỮ NGUYÊN ... */}
+              {/* --- PREVIEW MODAL (CHẾ ĐỘ XEM TRƯỚC) --- */}
               {isPreviewModalOpen && previewData && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-50 p-2 sm:p-4">
-                  <div className="bg-white w-full max-w-5xl h-[95vh] sm:h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-                    <div className="flex justify-between items-center px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 bg-slate-50 shrink-0">
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+                  <div className="bg-white w-full max-w-5xl h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+                    
+                    {/* Header Preview */}
+                    <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 bg-slate-50 shrink-0">
                       <div className="flex items-center gap-3">
                         <div className="bg-indigo-100 text-indigo-700 p-2 rounded-lg"><i className="fa-solid fa-file-pdf text-xl"></i></div>
-                        <div><h2 className="text-lg sm:text-xl font-bold text-slate-800 break-words">{previewData.code} <span className="text-sm font-bold text-blue-600">v{previewData.version}</span></h2></div>
+                        <div>
+                          <h2 className="text-xl font-bold text-slate-800">{previewData.code}</h2>
+                          <div className="text-sm text-slate-500">Phiên bản: <span className="font-bold text-blue-600">v{previewData.version}</span></div>
+                        </div>
                       </div>
-                      <button onClick={() => setIsPreviewModalOpen(false)} className="w-8 h-8 flex items-center justify-center bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 hover:text-slate-800 transition-colors"><i className="fa-solid fa-xmark text-lg"></i></button>
+                      <div className="flex gap-2">
+                        {previewData.link && (
+                          <a href={previewData.link} target="_blank" rel="noreferrer" className="px-4 py-2 bg-white border border-gray-300 text-slate-700 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors">
+                            <i className="fa-solid fa-arrow-up-right-from-square mr-2"></i> Mở liên kết gốc
+                          </a>
+                        )}
+                        <button onClick={() => setIsPreviewModalOpen(false)} className="w-9 h-9 flex items-center justify-center bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 hover:text-slate-800 transition-colors">
+                          <i className="fa-solid fa-xmark text-lg"></i>
+                        </button>
+                      </div>
                     </div>
-                    {/* ... Body preview ... */}
+
+                    {/* Body Preview */}
+                    <div className="flex-1 overflow-y-auto flex flex-col md:flex-row bg-slate-100">
+                      
+                      {/* Cột trái: Thông tin tóm tắt */}
+                      <div className="w-full md:w-1/3 bg-white border-r border-gray-200 p-6 flex flex-col gap-6 shrink-0 overflow-y-auto">
+                        <div>
+                          <div className="text-xs font-bold text-slate-400 uppercase mb-1">Tên tài liệu</div>
+                          <div className="text-lg font-bold text-slate-800">{previewData.name}</div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <div className="text-xs font-bold text-slate-400 uppercase mb-1">Loại</div>
+                            <div className="font-semibold text-slate-700 bg-slate-100 inline-block px-2 py-0.5 rounded">{previewData.type}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-slate-400 uppercase mb-1">Phòng ban</div>
+                            <div className="font-semibold text-slate-700">{previewData.dept}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-slate-400 uppercase mb-1">Phạm vi</div>
+                            <div className="font-semibold text-slate-700">{previewData.scope}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-slate-400 uppercase mb-1">Trạng thái</div>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold ${
+                              previewData.status === 'Effective' ? 'bg-emerald-100 text-emerald-700' :
+                              previewData.status === 'Draft' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'
+                            }`}>{previewData.status}</span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-gray-100">
+                          <div>
+                            <div className="text-xs font-bold text-slate-500 mb-1"><i className="fa-regular fa-calendar-check mr-1"></i> Ngày hiệu lực</div>
+                            <div className="font-semibold text-slate-800">{previewData.effectiveDate || 'Chưa xác định'}</div>
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold text-slate-500 mb-1"><i className="fa-solid fa-calendar-day mr-1"></i> Hạn soát xét</div>
+                            <div className="font-semibold text-slate-800">{previewData.reviewDate || 'Chưa xác định'}</div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="text-xs font-bold text-slate-400 uppercase mb-2">Ghi chú lịch sử / Sửa đổi</div>
+                          <div className="text-sm text-slate-600 bg-amber-50 p-3 rounded-lg border border-amber-100 italic">
+                            {previewData.notes || 'Không có ghi chú nào cho phiên bản này.'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Cột phải: Khung nhúng tài liệu (Iframe) */}
+                      <div className="w-full md:w-2/3 p-4 flex flex-col items-center justify-center relative min-h-[400px]">
+                        {previewData.link ? (
+                          <iframe 
+                            src={getEmbedLink(previewData.link)} 
+                            className="w-full h-full rounded-xl shadow-sm border border-gray-300 bg-white"
+                            title="Document Viewer"
+                            allowFullScreen
+                          ></iframe>
+                        ) : (
+                          <div className="text-center bg-white p-10 rounded-2xl shadow-sm border border-gray-200 max-w-md">
+                            <div className="text-slate-300 mb-4"><i className="fa-regular fa-folder-open text-6xl"></i></div>
+                            <h3 className="text-lg font-bold text-slate-700 mb-2">Chưa có liên kết tài liệu</h3>
+                            <p className="text-sm text-slate-500 mb-6">Tài liệu này chưa được đính kèm link (Google Drive, SharePoint...). Hãy cập nhật liên kết để có thể xem trước nội dung tại đây.</p>
+                            <button onClick={() => { setIsPreviewModalOpen(false); openEditModal(previewData); }} className="px-5 py-2 bg-blue-100 text-blue-700 font-bold rounded-lg text-sm hover:bg-blue-200 transition-colors">
+                              Cập nhật liên kết ngay
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                    </div>
                   </div>
                 </div>
               )}
-              {/* CÁC MODAL ADD/EDIT, HISTORY GIỮ NGUYÊN (NHƯNG THÊM CSS RESPONSIVE CHO INPUT) */}
+
+              {/* --- ADD/EDIT MODAL --- */}
+              {isModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+                  <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                    <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 bg-slate-50/50 shrink-0">
+                      <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        {modalMode === 'add' ? 'Thêm mới Tài liệu' : modalMode === 'revise' ? 'Soát xét/Sửa đổi Tài liệu (Phiên bản mới)' : 'Chỉnh sửa Thông tin'}
+                      </h2>
+                      <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-red-500 transition-colors p-1"><i className="fa-solid fa-circle-xmark text-xl"></i></button>
+                    </div>
+                    
+                    <div className="overflow-y-auto p-6 flex-1">
+                      {formError && (
+                        <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm flex items-center gap-2">
+                          <i className="fa-solid fa-triangle-exclamation"></i> {formError}
+                        </div>
+                      )}
+                      
+                      <form id="sopForm" onSubmit={handleSaveSOP}>
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-5">
+                          <div className="md:col-span-3">
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Mã tài liệu (Document Code) *</label>
+                            <input required type="text" value={formData.code} onChange={e => setFormData({...formData, code: e.target.value.toUpperCase()})} readOnly={modalMode !== 'add'} className={`w-full border rounded-lg p-2.5 text-sm font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-shadow ${modalMode !== 'add' ? 'bg-slate-100 text-slate-500 border-transparent cursor-not-allowed' : 'border-gray-300 text-slate-800'}`} placeholder="VD: SOP-QA-001"/>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Phiên bản *</label>
+                            <input required type="text" value={formData.version} onChange={e => setFormData({...formData, version: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm font-bold text-blue-700 bg-blue-50 focus:ring-2 focus:ring-blue-500 outline-none text-center" />
+                          </div>
+                        </div>
+                        
+                        <div className="mb-5">
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tên tài liệu (Document Name) *</label>
+                          <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none transition-shadow" placeholder="Tên quy trình đầy đủ..."/>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5 border-y border-gray-100 py-5">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Loại (Type)</label>
+                            <select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none">
+                              <option>SOP</option><option>WI</option><option>FORM</option><option>POLICY</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Phạm vi (Scope)</label>
+                            <select value={formData.scope} onChange={e => setFormData({...formData, scope: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none">
+                              <option>GMP</option><option>GDP</option><option>GSP</option><option>GMP+GSP+GDP</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Bộ phận (Dept)</label>
+                            <select value={formData.dept} onChange={e => setFormData({...formData, dept: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none">
+                              <option>QA</option><option>QC</option><option>Warehouse</option><option>Logistics</option><option>Production</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Trạng thái (Status)</label>
+                            <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className={`w-full border rounded-lg p-2.5 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 ${formData.status === 'Effective' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : formData.status === 'Draft' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
+                              <option value="Draft">Draft</option>
+                              <option value="Effective">Effective</option>
+                              <option value="Obsolete">Obsolete</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Ngày hiệu lực</label>
+                            <input type="date" value={formData.effectiveDate} onChange={e => setFormData({...formData, effectiveDate: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"/>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Hạn soát xét</label>
+                            <input type="date" value={formData.reviewDate} onChange={e => setFormData({...formData, reviewDate: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none"/>
+                          </div>
+                        </div>
+
+                        <div className="mb-5">
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Mô tả thay đổi (Change Notes)</label>
+                          <textarea rows="2" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none resize-none" placeholder="Lý do cập nhật, điểm mới..."></textarea>
+                        </div>
+
+                        <div className="mb-2">
+                          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Link lưu trữ (Google Drive/SharePoint)</label>
+                          <div className="relative">
+                            <i className="fa-solid fa-link absolute left-3 top-3.5 text-slate-400"></i>
+                            <input type="url" value={formData.link} onChange={e => setFormData({...formData, link: e.target.value})} className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="https://docs.google.com/document/d/..."/>
+                          </div>
+                        </div>
+                      </form>
+                    </div>
+                    
+                    <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 bg-slate-50/50 shrink-0">
+                      <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2 border border-gray-300 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">Hủy</button>
+                      <button form="sopForm" type="submit" className="px-5 py-2 bg-blue-700 text-white rounded-lg text-sm font-bold hover:bg-blue-800 shadow-md transition-colors">
+                        {modalMode === 'add' ? 'Lưu mới' : 'Cập nhật'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* --- HISTORY MODAL --- */}
+              {isHistoryModalOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+                  <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden">
+                    <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 bg-slate-50">
+                      <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <i className="fa-solid fa-clock-rotate-left text-blue-600"></i> Lịch sử phiên bản: {historyCode}
+                      </h2>
+                      <button onClick={() => setIsHistoryModalOpen(false)} className="text-slate-400 hover:text-red-500 transition-colors p-1"><i className="fa-solid fa-circle-xmark text-xl"></i></button>
+                    </div>
+                    
+                    <div className="p-0 overflow-x-auto max-h-[60vh]">
+                      <table className="w-full text-left">
+                        <thead className="bg-slate-100 text-slate-600 text-xs uppercase tracking-wider font-bold sticky top-0">
+                          <tr>
+                            <th className="px-6 py-3">Version</th>
+                            <th className="px-6 py-3">Status</th>
+                            <th className="px-6 py-3">Effective</th>
+                            <th className="px-6 py-3">Notes</th>
+                            <th className="px-6 py-3 text-right">Admin</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 text-sm">
+                          {sops.filter(s => s.code === historyCode).sort((a,b) => parseFloat(b.version) - parseFloat(a.version)).map((ver) => (
+                            <tr key={ver.id} className="hover:bg-slate-50">
+                              <td className="px-6 py-3 font-bold text-slate-800">v{ver.version}</td>
+                              <td className="px-6 py-3">
+                                <span className={`px-2 py-0.5 rounded text-xs font-bold ${ver.status === 'Effective' ? 'bg-emerald-100 text-emerald-700' : ver.status === 'Draft' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'}`}>{ver.status}</span>
+                              </td>
+                              <td className="px-6 py-3 text-slate-500">{ver.effectiveDate || '-'}</td>
+                              <td className="px-6 py-3 text-slate-600 italic">{ver.notes || '-'}</td>
+                              <td className="px-6 py-3 text-right">
+                                 <button onClick={() => { setIsHistoryModalOpen(false); openEditModal(ver); }} className="text-blue-600 hover:underline text-xs font-semibold mr-3">Edit</button>
+                                 <button onClick={() => deleteSOP(ver.id)} className="text-red-500 hover:underline text-xs font-semibold">Delete</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="p-4 bg-slate-50 border-t border-gray-200 flex justify-end">
+                      <button onClick={() => setIsHistoryModalOpen(false)} className="px-5 py-2 bg-slate-200 text-slate-700 rounded-lg text-sm font-bold hover:bg-slate-300 transition-colors">Đóng</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           );
         }
