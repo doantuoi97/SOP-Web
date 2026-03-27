@@ -65,8 +65,37 @@
 
         const { useState, useEffect, useMemo } = React;
 
-        // --- CẤU HÌNH FIREBASE ---
-        const CUSTOM_FIREBASE_CONFIG = null; 
+        // ==============================================================================
+        // --- ⚙️ HƯỚNG DẪN CẤU HÌNH ĐỒNG BỘ ĐÁM MÂY (FIREBASE CLOUD SYNC) ---
+        // ==============================================================================
+        // Để ứng dụng tự động đồng bộ dữ liệu (chuyển sang chế độ "Cloud Synced"):
+        // 1. Vào trang https://console.firebase.google.com/ và tạo 1 Project mới (Miễn phí).
+        // 2. Ở menu bên trái, chọn Build -> Firestore Database -> Bấm "Create database".
+        //    (Lưu ý quan trọng: Ở bước thiết lập quyền, hãy chọn "Start in Test mode").
+        // 3. Về trang chủ Project Settings (biểu tượng bánh răng) -> Kéo xuống phần "Your apps".
+        // 4. Bấm vào biểu tượng Web (</>) để tạo app -> Đăng ký tên -> Copy đoạn mã firebaseConfig.
+        // 5. Dán đoạn mã đó đè lên chữ `null` ở dòng dưới cùng của khối này.
+        // 
+        // Ví dụ đoạn mã sau khi dán sẽ trông như thế này:
+        // const CUSTOM_FIREBASE_CONFIG = {
+        //   apiKey: "AIzaSyBxxxx...",
+        //   authDomain: "ten-du-an.firebaseapp.com",
+        //   projectId: "ten-du-an",
+        //   storageBucket: "ten-du-an.appspot.com",
+        //   messagingSenderId: "123456789",
+        //   appId: "1:123456789:web:abcdefg"
+        // };
+        // ==============================================================================
+        
+        const CUSTOM_FIREBASE_CONFIG = {
+          apiKey: "AIzaSyCjVNmkUwyyNTCCTJzdzsGzJ9F2yUwMJ4E",
+          authDomain: "sop-master-list.firebaseapp.com",
+          projectId: "sop-master-list",
+          storageBucket: "sop-master-list.firebasestorage.app",
+          messagingSenderId: "613378917384",
+          appId: "1:613378917384:web:473be1da0b6c64e2eb7dbd",
+          measurementId: "G-QZX1Z1SSTN"
+        };
 
         const envConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
         const activeConfig = CUSTOM_FIREBASE_CONFIG || envConfig;
@@ -84,7 +113,7 @@
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
                 return collection(db, 'artifacts', appId, 'public', 'data', 'sops');
             }
-            return collection(db, 'qa_sops_cloud');
+            return collection(db, 'qa_sops_cloud_v2'); // Sử dụng collection cho CSDL cá nhân của bạn
         };
 
         const initialData = [
