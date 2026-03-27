@@ -4,15 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SOP Master List - QA Dashboard</title>
+    <!-- Thư viện React & Tailwind -->
     <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
+    <!-- Cấu hình Tailwind Custom Colors, Fonts & Dark Mode -->
     <script>
         tailwind.config = {
-            darkMode: 'class', // Kích hoạt Dark Mode dựa trên class 'dark' ở thẻ html
+            darkMode: 'class',
             theme: {
                 extend: {
                     fontFamily: {
@@ -26,12 +28,12 @@
         }
     </script>
     
+    <!-- Google Font Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
     <style>
         body { font-family: 'Inter', sans-serif; }
         
-        /* Scrollbar hiện đại, hỗ trợ dark mode */
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
@@ -40,14 +42,12 @@
         .dark ::-webkit-scrollbar-thumb { background-color: #475569; border: 2px solid transparent; background-clip: padding-box; }
         .dark ::-webkit-scrollbar-thumb:hover { background-color: #64748b; }
 
-        /* Animation cho Modal */
         @keyframes modalFadeIn {
             from { opacity: 0; transform: scale(0.95) translateY(-10px); }
             to { opacity: 1; transform: scale(1) translateY(0); }
         }
         .animate-modal { animation: modalFadeIn 0.2s ease-out forwards; }
         
-        /* Bóng mượt cho table */
         .table-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); }
         .dark .table-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3); }
     </style>
@@ -57,17 +57,13 @@
 
     <script type="text/babel" data-type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // Import thêm các hàm đăng nhập bằng Email/Password
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        // Import Firebase Storage
         import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         const { useState, useEffect, useMemo } = React;
 
-        // ==============================================================================
-        // --- ⚙️ HƯỚNG DẪN CẤU HÌNH ĐỒNG BỘ ĐÁM MÂY (FIREBASE CLOUD SYNC) ---
-        // ==============================================================================
-        
         const CUSTOM_FIREBASE_CONFIG = {
           apiKey: "AIzaSyCjVNmkUwyyNTCCTJzdzsGzJ9F2yUwMJ4E",
           authDomain: "sop-master-list.firebaseapp.com",
@@ -87,7 +83,7 @@
             app = initializeApp(activeConfig);
             auth = getAuth(app);
             db = getFirestore(app);
-            storage = getStorage(app); // Khởi tạo Storage
+            storage = getStorage(app);
         }
 
         const getDbCollection = () => {
@@ -100,13 +96,10 @@
 
         const initialData = [
           { id: '1', code: 'SOP-KHO-004', name: 'Quy trình nhận nguyên liệu sản xuất', type: 'SOP', scope: 'GMP', dept: 'Warehouse', version: '1.0', effectiveDate: '2024-01-15', reviewDate: '2026-01-15', status: 'Obsolete', link: '', notes: 'Phiên bản đầu tiên' },
-          { id: '2', code: 'SOP-KHO-004', name: 'Quy trình nhận nguyên liệu sản xuất', type: 'SOP', scope: 'GMP', dept: 'Warehouse', version: '2.0', effectiveDate: '2026-02-01', reviewDate: '2028-02-01', status: 'Effective', link: 'https://docs.google.com/document/d/1B_8j.../edit', notes: 'Cập nhật theo quy định mới' },
-          { id: '3', code: 'SOP-QA-001', name: 'Kiểm soát tài liệu QMS', type: 'SOP', scope: 'GSP', dept: 'QA', version: '1.0', effectiveDate: '2025-03-20', reviewDate: '2027-03-20', status: 'Effective', link: '', notes: 'Dùng chung cho cả nhà máy và phân phối' },
-          { id: '4', code: 'WI-LOG-002', name: 'Hướng dẫn ghi chép nhiệt độ xe tải', type: 'WI', scope: 'GDP', dept: 'Logistics', version: '1.0', effectiveDate: '2026-04-01', reviewDate: '2026-04-15', status: 'Draft', link: '', notes: 'Đang soạn thảo' }
+          { id: '2', code: 'SOP-KHO-004', name: 'Quy trình nhận nguyên liệu sản xuất', type: 'SOP', scope: 'GMP', dept: 'Warehouse', version: '2.0', effectiveDate: '2026-02-01', reviewDate: '2028-02-01', status: 'Effective', link: '', notes: 'Cập nhật theo quy định mới' }
         ];
 
         function App() {
-          // --- QUẢN LÝ THEME (SÁNG/TỐI) ---
           const [isDarkMode, setIsDarkMode] = useState(() => {
             const savedTheme = localStorage.getItem('qa_dashboard_theme');
             if (savedTheme) return savedTheme === 'dark';
@@ -127,6 +120,16 @@
 
           // --- STATE CHÍNH ---
           const [user, setUser] = useState(null);
+          // Xác định xem người dùng hiện tại có phải là Admin hay không
+          // Nếu không dùng Cloud (Offline) thì auto là Admin. Nếu dùng Cloud, phải là user đăng nhập bằng Email (!user.isAnonymous)
+          const isAdmin = !isCloudActive || (user && !user.isAnonymous);
+
+          // States Đăng nhập
+          const [showLoginModal, setShowLoginModal] = useState(false);
+          const [loginEmail, setLoginEmail] = useState('');
+          const [loginPassword, setLoginPassword] = useState('');
+          const [loginError, setLoginError] = useState('');
+
           const [sops, setSops] = useState(() => {
             const saved = localStorage.getItem('qa_sop_master_list');
             return saved ? JSON.parse(saved) : initialData;
@@ -143,7 +146,6 @@
           const [formError, setFormError] = useState('');
           const [currentPage, setCurrentPage] = useState(1);
           
-          // States cho Upload
           const [uploading, setUploading] = useState(false);
           const [uploadProgress, setUploadProgress] = useState(0);
           const [fileInputKey, setFileInputKey] = useState(Date.now());
@@ -162,12 +164,21 @@
               try {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token && !CUSTOM_FIREBASE_CONFIG) {
                   await signInWithCustomToken(auth, __initial_auth_token);
-                } else await signInAnonymously(auth);
+                } else {
+                  // Mặc định đăng nhập Ẩn danh (Chỉ xem)
+                  await signInAnonymously(auth);
+                }
               } catch (error) { console.error("Lỗi xác thực:", error); }
             };
-            initAuth();
-            const unsubscribe = onAuthStateChanged(auth, setUser);
-            return () => unsubscribe();
+            
+            // Chỉ chạy initAuth nếu chưa có user nào được lưu trong phiên
+            auth.onAuthStateChanged((currentUser) => {
+                if (!currentUser) {
+                    initAuth();
+                } else {
+                    setUser(currentUser);
+                }
+            });
           }, []);
 
           useEffect(() => {
@@ -181,6 +192,31 @@
             }, (error) => { setIsCloudLoading(false); });
             return () => unsubscribe();
           }, [user]);
+
+          // --- XỬ LÝ ĐĂNG NHẬP / ĐĂNG XUẤT ---
+          const handleLogin = async (e) => {
+              e.preventDefault();
+              setLoginError('');
+              try {
+                  await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
+                  setShowLoginModal(false);
+                  setLoginEmail('');
+                  setLoginPassword('');
+              } catch (error) {
+                  console.error(error);
+                  setLoginError('Đăng nhập thất bại. Sai email, mật khẩu hoặc tài khoản chưa được tạo trên Firebase.');
+              }
+          };
+
+          const handleLogout = async () => {
+              try {
+                  await signOut(auth);
+                  // Sau khi đăng xuất Admin, tự động đăng nhập ẩn danh lại để tiếp tục xem được dữ liệu
+                  await signInAnonymously(auth);
+              } catch (error) {
+                  console.error("Lỗi đăng xuất", error);
+              }
+          };
 
           const latestSops = useMemo(() => {
             const grouped = {};
@@ -211,7 +247,6 @@
             };
           }, [latestSops]);
 
-          // TÍNH NĂNG MỚI: TỰ ĐỘNG SẮP XẾP CHỮ VÀ SỐ (NATURAL SORT)
           const filteredSops = useMemo(() => {
             let result = latestSops.filter(sop => {
               const matchSearch = sop.code.toLowerCase().includes(searchTerm.toLowerCase()) || sop.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -222,7 +257,6 @@
                      (filters.status === 'All' || sop.status === filters.status);
             });
             
-            // Sắp xếp tự nhiên (Natural Sort) theo mã DOC CODE từ A-Z và tăng dần theo số
             result.sort((a, b) => {
               return a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' });
             });
@@ -239,6 +273,8 @@
 
           const handleSaveSOP = async (e) => {
             e.preventDefault();
+            if (!isAdmin) return; // Chặn lưu nếu không phải admin
+
             setFormError('');
             let newSops = [...sops];
             if (formData.status === 'Effective') {
@@ -263,7 +299,10 @@
                         await setDoc(doc(sopsRef, newId), { ...formData, id: newId });
                     } else await setDoc(doc(sopsRef, formData.id), formData);
                     setIsModalOpen(false);
-                } catch (error) { setFormError("Lỗi kết nối Cloud Server."); }
+                } catch (error) { 
+                    console.error(error);
+                    setFormError("Lỗi kết nối Cloud. Hãy kiểm tra lại Rule Firestore xem tài khoản của bạn đã được cấp quyền Write chưa."); 
+                }
             } else {
                 let finalSops = isAddingNew ? [...newSops, { ...formData, id: Date.now().toString() }] : newSops.map(s => s.id === formData.id ? formData : s);
                 setSops(finalSops);
@@ -272,14 +311,16 @@
           };
 
           const deleteSOP = async (id) => {
+            if (!isAdmin) return;
             if (window.confirm('Bạn có chắc chắn muốn xóa bản ghi này? Hành động này không thể hoàn tác.')) {
               if (isCloudActive && user) {
-                  try { await deleteDoc(doc(getDbCollection(), id)); } catch (error) { alert("Lỗi xóa Cloud."); }
+                  try { await deleteDoc(doc(getDbCollection(), id)); } catch (error) { alert("Lỗi xóa Cloud. Kiểm tra quyền Admin."); }
               } else setSops(sops.filter(s => s.id !== id));
             }
           };
 
           const seedInitialData = async () => {
+            if (!isAdmin) return;
             if (isCloudActive && user) {
                 setIsCloudLoading(true);
                 const sopsRef = getDbCollection();
@@ -288,8 +329,8 @@
             } else setSops(initialData);
           };
 
-          // Logic Xử lý Upload File
           const handleFileUpload = async (e) => {
+            if (!isAdmin) return;
             const file = e.target.files[0];
             if (!file) return;
             
@@ -314,22 +355,23 @@
                 }, 
                 (error) => {
                     console.error("Lỗi tải file:", error);
-                    setFormError("Lỗi khi tải file lên: " + error.message);
+                    setFormError("Lỗi khi tải file lên: (Chắc chắn Storage Rules cho phép write) " + error.message);
                     setUploading(false);
-                    setFileInputKey(Date.now()); // Reset input
+                    setFileInputKey(Date.now()); 
                 }, 
                 async () => {
                     const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
                     setFormData({...formData, link: downloadURL});
                     setUploading(false);
-                    setFileInputKey(Date.now()); // Reset input
+                    setFileInputKey(Date.now()); 
                 }
             );
           };
 
-          const openAddModal = () => { setFormData(emptyForm); setModalMode('add'); setFormError(''); setIsModalOpen(true); };
-          const openEditModal = (sop) => { setFormData(sop); setModalMode('edit'); setFormError(''); setIsModalOpen(true); };
+          const openAddModal = () => { if(isAdmin) { setFormData(emptyForm); setModalMode('add'); setFormError(''); setIsModalOpen(true); } };
+          const openEditModal = (sop) => { if(isAdmin) { setFormData(sop); setModalMode('edit'); setFormError(''); setIsModalOpen(true); } };
           const openReviseModal = (sop) => {
+            if(!isAdmin) return;
             let nextVer = '1.0';
             if (!isNaN(parseFloat(sop.version))) nextVer = (Math.floor(parseFloat(sop.version)) + 1).toFixed(1);
             setFormData({ ...sop, id: '', version: nextVer, status: 'Draft', effectiveDate: '', reviewDate: '', notes: 'Soát xét từ v' + sop.version });
@@ -357,7 +399,6 @@
           };
 
           // --- UI COMPONENTS ---
-          
           const StatCard = ({ icon, title, value, colorType }) => {
             const colors = {
                 brand: "text-brand-600 bg-brand-50 border-brand-100 ring-brand-600/10 dark:bg-brand-900/30 dark:border-brand-800/50 dark:text-brand-400 dark:ring-brand-500/20",
@@ -435,20 +476,35 @@
                     </div>
                     
                     <div className="flex items-center gap-3">
-                      {/* Dark Mode Toggle Button */}
                       <button onClick={toggleDarkMode} className="p-2 text-slate-500 dark:text-slate-400 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors focus:outline-none" title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}>
                         {isDarkMode ? <i className="fa-solid fa-sun text-lg"></i> : <i className="fa-solid fa-moon text-lg"></i>}
                       </button>
 
-                      <button onClick={exportCSV} className="hidden sm:flex items-center gap-2 px-3.5 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1 dark:focus:ring-offset-slate-800">
+                      <div className="h-6 w-px bg-slate-300 dark:bg-slate-600 mx-1"></div>
+
+                      {/* --- NÚT ĐĂNG NHẬP / ĐĂNG XUẤT --- */}
+                      {isAdmin ? (
+                        <div className="flex items-center gap-3">
+                            <span className="text-sm font-semibold text-brand-700 dark:text-brand-400 hidden md:inline-block"><i className="fa-solid fa-user-shield mr-1"></i> Quản trị viên</span>
+                            <button onClick={handleLogout} className="px-3.5 py-2 text-sm font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-rose-500">
+                                Đăng xuất
+                            </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setShowLoginModal(true)} className="flex items-center gap-2 px-3.5 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500">
+                            <i className="fa-solid fa-lock text-slate-400 dark:text-slate-400"></i> <span className="hidden sm:inline">Đăng nhập</span>
+                        </button>
+                      )}
+
+                      <button onClick={exportCSV} className="hidden lg:flex items-center gap-2 px-3.5 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1 dark:focus:ring-offset-slate-800">
                         <i className="fa-solid fa-file-csv text-slate-400 dark:text-slate-300"></i> Export
                       </button>
-                      <button onClick={() => window.print()} className="hidden sm:flex items-center gap-2 px-3.5 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1 dark:focus:ring-offset-slate-800">
-                        <i className="fa-solid fa-print text-slate-400 dark:text-slate-300"></i> Print
-                      </button>
-                      <button onClick={openAddModal} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-brand-600 dark:bg-brand-500 rounded-lg hover:bg-brand-700 dark:hover:bg-brand-600 shadow-sm shadow-brand-500/30 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800">
-                        <i className="fa-solid fa-plus"></i> <span className="hidden sm:inline">Add Document</span><span className="sm:hidden">Add</span>
-                      </button>
+                      
+                      {isAdmin && (
+                          <button onClick={openAddModal} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-brand-600 dark:bg-brand-500 rounded-lg hover:bg-brand-700 dark:hover:bg-brand-600 shadow-sm shadow-brand-500/30 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800">
+                            <i className="fa-solid fa-plus"></i> <span className="hidden sm:inline">Add Document</span><span className="sm:hidden">Add</span>
+                          </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -549,19 +605,25 @@
                                   <Badge type={sop.status}>{sop.status}</Badge>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right print:hidden">
-                                  <div className="flex justify-end gap-1 opacity-20 group-hover:opacity-100 transition-opacity">
+                                  <div className="flex justify-end gap-1 opacity-100 lg:opacity-20 lg:group-hover:opacity-100 transition-opacity">
                                     <button onClick={() => openPreviewModal(sop)} className="p-2 text-slate-400 dark:text-slate-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30 rounded-lg transition-colors" title="Xem trước (Preview)">
                                       <i className="fa-solid fa-eye text-lg"></i>
                                     </button>
                                     <button onClick={() => { setHistoryCode(sop.code); setIsHistoryModalOpen(true); }} className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors" title="Lịch sử (History)">
                                       <i className="fa-solid fa-clock-rotate-left text-lg"></i>
                                     </button>
-                                    <button onClick={() => openEditModal(sop)} className="p-2 text-slate-400 dark:text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-lg transition-colors" title="Sửa (Edit)">
-                                      <i className="fa-solid fa-pen text-lg"></i>
-                                    </button>
-                                    <button onClick={() => openReviseModal(sop)} className="p-2 text-slate-400 dark:text-slate-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-lg transition-colors" title="Soát xét (Revise)">
-                                      <i className="fa-solid fa-code-branch text-lg"></i>
-                                    </button>
+                                    
+                                    {/* CHỈ HIỂN THỊ CÁC NÚT SAU KHI LÀ ADMIN */}
+                                    {isAdmin && (
+                                        <>
+                                            <button onClick={() => openEditModal(sop)} className="p-2 text-slate-400 dark:text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-lg transition-colors" title="Sửa (Edit)">
+                                              <i className="fa-solid fa-pen text-lg"></i>
+                                            </button>
+                                            <button onClick={() => openReviseModal(sop)} className="p-2 text-slate-400 dark:text-slate-500 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-lg transition-colors" title="Soát xét (Revise)">
+                                              <i className="fa-solid fa-code-branch text-lg"></i>
+                                            </button>
+                                        </>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
@@ -573,7 +635,7 @@
                                 <i className="fa-regular fa-folder-open text-5xl mb-4 text-slate-300 dark:text-slate-600"></i>
                                 <p className="text-lg font-medium text-slate-600 dark:text-slate-400">Không tìm thấy tài liệu nào</p>
                                 <p className="text-sm mt-1">Vui lòng điều chỉnh bộ lọc hoặc thêm tài liệu mới.</p>
-                                {sops.length === 0 && (
+                                {sops.length === 0 && isAdmin && (
                                   <button onClick={seedInitialData} className="mt-6 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm">
                                     <i className="fa-solid fa-wand-magic-sparkles mr-2 text-amber-500"></i>Khôi phục dữ liệu mẫu
                                   </button>
@@ -615,6 +677,47 @@
                   </div>
                 </div>
               </main>
+
+              {/* --- LOGIN MODAL --- */}
+              {showLoginModal && (
+                <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+                  <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:p-0">
+                    <div className="fixed inset-0 bg-slate-900/50 dark:bg-slate-900/80 backdrop-blur-sm transition-opacity" aria-hidden="true" onClick={() => setShowLoginModal(false)}></div>
+                    <div className="inline-block align-bottom bg-white dark:bg-slate-800 rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-md sm:w-full animate-modal border border-slate-200 dark:border-slate-700">
+                        <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                            <h3 className="text-lg leading-6 font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-brand-100 dark:bg-brand-900/30 flex items-center justify-center text-brand-600 dark:text-brand-400"><i className="fa-solid fa-shield-halved"></i></div>
+                                Đăng nhập Quản trị
+                            </h3>
+                            <button onClick={() => setShowLoginModal(false)} className="bg-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 focus:outline-none rounded-md p-1 transition-colors"><i className="fa-solid fa-xmark text-xl"></i></button>
+                        </div>
+                        <div className="px-6 py-5">
+                            {loginError && (
+                                <div className="mb-4 bg-rose-50 dark:bg-rose-900/30 border-l-4 border-rose-500 p-3 rounded-r-md">
+                                    <p className="text-sm text-rose-700 dark:text-rose-300">{loginError}</p>
+                                </div>
+                            )}
+                            <form id="loginForm" onSubmit={handleLogin} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Email <span className="text-rose-500">*</span></label>
+                                    <input required type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 dark:text-white bg-white dark:bg-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 dark:ring-slate-600 focus:ring-2 focus:ring-inset focus:ring-brand-600 sm:text-sm" placeholder="admin@domain.com"/>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Mật khẩu <span className="text-rose-500">*</span></label>
+                                    <input required type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} className="block w-full rounded-lg border-0 py-2.5 px-3 text-slate-900 dark:text-white bg-white dark:bg-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 dark:ring-slate-600 focus:ring-2 focus:ring-inset focus:ring-brand-600 sm:text-sm" placeholder="••••••••"/>
+                                </div>
+                            </form>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3">
+                            <button type="button" onClick={() => setShowLoginModal(false)} className="inline-flex justify-center rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none transition-colors">Hủy</button>
+                            <button form="loginForm" type="submit" className="inline-flex justify-center rounded-lg border border-transparent bg-brand-600 px-6 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 focus:outline-none transition-colors">
+                                Đăng nhập
+                            </button>
+                        </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* --- ADD/EDIT MODAL --- */}
               {isModalOpen && (
@@ -834,9 +937,11 @@
                               <i className="fa-solid fa-link-slash text-5xl text-slate-300 dark:text-slate-600 mb-4"></i>
                               <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Chưa đính kèm file gốc</h3>
                               <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Tài liệu này chưa có đường dẫn hoặc file upload để hiển thị trực tiếp.</p>
-                              <button onClick={() => { setIsPreviewModalOpen(false); openEditModal(previewData); }} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg text-brand-700 dark:text-brand-400 bg-brand-100 dark:bg-brand-900/40 hover:bg-brand-200 dark:hover:bg-brand-900/60 transition-colors">
-                                Cập nhật liên kết / Tải file ngay
-                              </button>
+                              {isAdmin && (
+                                <button onClick={() => { setIsPreviewModalOpen(false); openEditModal(previewData); }} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg text-brand-700 dark:text-brand-400 bg-brand-100 dark:bg-brand-900/40 hover:bg-brand-200 dark:hover:bg-brand-900/60 transition-colors">
+                                  Cập nhật liên kết / Tải file ngay
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -878,8 +983,14 @@
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600 dark:text-slate-300">{ver.effectiveDate || '-'}</td>
                                 <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 italic max-w-xs truncate">{ver.notes || '-'}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                   <button onClick={() => { setIsHistoryModalOpen(false); openEditModal(ver); }} className="text-brand-600 dark:text-brand-400 hover:text-brand-900 dark:hover:text-brand-300 mr-4">Sửa</button>
-                                   <button onClick={() => deleteSOP(ver.id)} className="text-rose-600 dark:text-rose-400 hover:text-rose-900 dark:hover:text-rose-300">Xóa</button>
+                                    {isAdmin ? (
+                                        <>
+                                           <button onClick={() => { setIsHistoryModalOpen(false); openEditModal(ver); }} className="text-brand-600 dark:text-brand-400 hover:text-brand-900 dark:hover:text-brand-300 mr-4">Sửa</button>
+                                           <button onClick={() => deleteSOP(ver.id)} className="text-rose-600 dark:text-rose-400 hover:text-rose-900 dark:hover:text-rose-300">Xóa</button>
+                                        </>
+                                    ) : (
+                                        <span className="text-slate-400 dark:text-slate-500 italic text-xs">Chỉ xem</span>
+                                    )}
                                 </td>
                               </tr>
                             ))}
