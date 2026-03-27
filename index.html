@@ -62,29 +62,13 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // Import Firebase Storage
+        import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         const { useState, useEffect, useMemo } = React;
 
         // ==============================================================================
         // --- ⚙️ HƯỚNG DẪN CẤU HÌNH ĐỒNG BỘ ĐÁM MÂY (FIREBASE CLOUD SYNC) ---
-        // ==============================================================================
-        // Để ứng dụng tự động đồng bộ dữ liệu (chuyển sang chế độ "Cloud Synced"):
-        // 1. Vào trang https://console.firebase.google.com/ và tạo 1 Project mới (Miễn phí).
-        // 2. Ở menu bên trái, chọn Build -> Firestore Database -> Bấm "Create database".
-        //    (Lưu ý quan trọng: Ở bước thiết lập quyền, hãy chọn "Start in Test mode").
-        // 3. Về trang chủ Project Settings (biểu tượng bánh răng) -> Kéo xuống phần "Your apps".
-        // 4. Bấm vào biểu tượng Web (</>) để tạo app -> Đăng ký tên -> Copy đoạn mã firebaseConfig.
-        // 5. Dán đoạn mã đó đè lên chữ `null` ở dòng dưới cùng của khối này.
-        // 
-        // Ví dụ đoạn mã sau khi dán sẽ trông như thế này:
-        // const CUSTOM_FIREBASE_CONFIG = {
-        //   apiKey: "AIzaSyBxxxx...",
-        //   authDomain: "ten-du-an.firebaseapp.com",
-        //   projectId: "ten-du-an",
-        //   storageBucket: "ten-du-an.appspot.com",
-        //   messagingSenderId: "123456789",
-        //   appId: "1:123456789:web:abcdefg"
-        // };
         // ==============================================================================
         
         const CUSTOM_FIREBASE_CONFIG = {
@@ -101,11 +85,12 @@
         const activeConfig = CUSTOM_FIREBASE_CONFIG || envConfig;
         const isCloudActive = !!activeConfig;
 
-        let app, auth, db;
+        let app, auth, db, storage;
         if (isCloudActive) {
             app = initializeApp(activeConfig);
             auth = getAuth(app);
             db = getFirestore(app);
+            storage = getStorage(app); // Khởi tạo Storage
         }
 
         const getDbCollection = () => {
@@ -113,7 +98,7 @@
                 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
                 return collection(db, 'artifacts', appId, 'public', 'data', 'sops');
             }
-            return collection(db, 'qa_sops_cloud_v2'); // Sử dụng collection cho CSDL cá nhân của bạn
+            return collection(db, 'qa_sops_cloud_v2'); 
         };
 
         const initialData = [
@@ -160,6 +145,12 @@
           const [previewData, setPreviewData] = useState(null);
           const [formError, setFormError] = useState('');
           const [currentPage, setCurrentPage] = useState(1);
+          
+          // States cho Upload
+          const [uploading, setUploading] = useState(false);
+          const [uploadProgress, setUploadProgress] = useState(0);
+          const [fileInputKey, setFileInputKey] = useState(Date.now());
+
           const itemsPerPage = 10;
           const emptyForm = { code: '', name: '', type: 'SOP', scope: 'GMP', dept: 'QA', version: '1.0', effectiveDate: '', reviewDate: '', status: 'Draft', link: '', notes: '' };
           const [formData, setFormData] = useState(emptyForm);
@@ -292,6 +283,45 @@
             } else setSops(initialData);
           };
 
+          // Logic Xử lý Upload File
+          const handleFileUpload = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            if (!isCloudActive || !storage) {
+                setFormError("Tính năng upload chỉ hoạt động khi bạn đã kết nối Firebase Đám mây.");
+                return;
+            }
+
+            const fileExtension = file.name.split('.').pop();
+            const fileName = `sops/${Date.now()}_${formData.code || 'doc'}.${fileExtension}`;
+            const storageRef = ref(storage, fileName);
+            const uploadTask = uploadBytesResumable(storageRef, file);
+
+            setUploading(true);
+            setUploadProgress(0);
+            setFormError('');
+
+            uploadTask.on('state_changed', 
+                (snapshot) => {
+                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                    setUploadProgress(progress);
+                }, 
+                (error) => {
+                    console.error("Lỗi tải file:", error);
+                    setFormError("Lỗi khi tải file lên: " + error.message);
+                    setUploading(false);
+                    setFileInputKey(Date.now()); // Reset input
+                }, 
+                async () => {
+                    const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                    setFormData({...formData, link: downloadURL});
+                    setUploading(false);
+                    setFileInputKey(Date.now()); // Reset input
+                }
+            );
+          };
+
           const openAddModal = () => { setFormData(emptyForm); setModalMode('add'); setFormError(''); setIsModalOpen(true); };
           const openEditModal = (sop) => { setFormData(sop); setModalMode('edit'); setFormError(''); setIsModalOpen(true); };
           const openReviseModal = (sop) => {
@@ -311,8 +341,15 @@
 
           const getEmbedLink = (url) => {
             if (!url) return null;
-            if (url.includes('docs.google.com') && (url.includes('/edit') || url.includes('/view'))) return url.replace(/\/(edit|view).*$/, '/preview');
+            if ((url.includes('docs.google.com') || url.includes('drive.google.com')) && (url.includes('/edit') || url.includes('/view'))) {
+                return url.replace(/\/(edit|view).*$/, '/preview');
+            }
+            // Các link Firebase Storage (thường là đuôi .pdf) hoặc các link tĩnh khác có thể nhúng thẳng
             return url;
+          };
+
+          const isGoogleDriveLink = (url) => {
+              return url && (url.includes('drive.google.com') || url.includes('docs.google.com'));
           };
 
           // --- UI COMPONENTS ---
@@ -582,7 +619,7 @@
                     <div className="fixed inset-0 bg-slate-900/50 dark:bg-slate-900/80 backdrop-blur-sm transition-opacity" aria-hidden="true" onClick={() => setIsModalOpen(false)}></div>
                     <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
                     
-                    <div className="inline-block align-bottom bg-white dark:bg-slate-800 rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full animate-modal border border-slate-200 dark:border-slate-700">
+                    <div className="inline-block align-bottom bg-white dark:bg-slate-800 rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full animate-modal border border-slate-200 dark:border-slate-700">
                       <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
                         <h3 className="text-lg leading-6 font-bold text-slate-900 dark:text-white" id="modal-title">
                           {modalMode === 'add' ? 'Thêm Tài liệu Mới' : modalMode === 'revise' ? 'Soát xét Phiên bản Mới' : 'Cập nhật Thông tin'}
@@ -662,21 +699,44 @@
                             <textarea rows="2" value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="block w-full rounded-lg border-0 py-2 px-3 text-slate-900 dark:text-white bg-white dark:bg-slate-900 shadow-sm ring-1 ring-inset ring-slate-300 dark:ring-slate-600 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-inset focus:ring-brand-600 sm:text-sm resize-none" placeholder="Lý do soát xét, nội dung thay đổi chính..."></textarea>
                           </div>
 
-                          <div>
-                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1">Liên kết lưu trữ (Google Drive/SharePoint)</label>
-                            <div className="relative mt-1 rounded-md shadow-sm">
-                              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                                <i className="fa-solid fa-link text-slate-400 dark:text-slate-500"></i>
+                          {/* Khu vực Upload / Gắn link */}
+                          <div className="bg-slate-50 dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Đính kèm tài liệu (PDF ưu tiên cho Preview)</label>
+                            <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">
+                              <div className="w-full md:flex-1">
+                                <div className="relative rounded-md shadow-sm">
+                                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                                    <i className="fa-solid fa-link text-slate-400 dark:text-slate-500"></i>
+                                  </div>
+                                  <input type="url" value={formData.link} onChange={e => setFormData({...formData, link: e.target.value})} className="block w-full rounded-lg border-0 py-2.5 pl-10 px-3 text-slate-900 dark:text-white bg-white dark:bg-slate-800 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-inset focus:ring-brand-600 sm:text-sm" placeholder="Nhập link Google Drive... HOẶC bấm nút Tải file bên cạnh"/>
+                                </div>
                               </div>
-                              <input type="url" value={formData.link} onChange={e => setFormData({...formData, link: e.target.value})} className="block w-full rounded-lg border-0 py-2 pl-10 px-3 text-slate-900 dark:text-white bg-white dark:bg-slate-900 ring-1 ring-inset ring-slate-300 dark:ring-slate-600 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-inset focus:ring-brand-600 sm:text-sm" placeholder="https://..."/>
+                              <div className="w-full md:w-auto shrink-0 flex items-center justify-center">
+                                <label className={`cursor-pointer w-full md:w-auto text-center bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-4 py-2.5 rounded-lg text-sm font-semibold border border-slate-300 dark:border-slate-600 transition-colors ${uploading ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                                  {uploading ? (
+                                      <><i className="fa-solid fa-spinner fa-spin mr-2"></i>Đang tải...</>
+                                  ) : (
+                                      <><i className="fa-solid fa-cloud-arrow-up mr-2"></i>Tải file lên</>
+                                  )}
+                                  <input type="file" className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx" onChange={handleFileUpload} disabled={uploading} key={fileInputKey}/>
+                                </label>
+                              </div>
                             </div>
+                            
+                            {/* Thanh tiến trình upload */}
+                            {uploading && (
+                              <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2 mt-3 overflow-hidden">
+                                <div className="bg-brand-600 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
+                              </div>
+                            )}
                           </div>
+
                         </form>
                       </div>
                       
                       <div className="bg-slate-50 dark:bg-slate-900/50 px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex justify-end gap-3 rounded-b-2xl">
                         <button type="button" onClick={() => setIsModalOpen(false)} className="inline-flex justify-center rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors">Hủy bỏ</button>
-                        <button form="sopForm" type="submit" className="inline-flex justify-center rounded-lg border border-transparent bg-brand-600 px-6 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors">
+                        <button form="sopForm" type="submit" disabled={uploading} className={`inline-flex justify-center rounded-lg border border-transparent bg-brand-600 px-6 py-2 text-sm font-semibold text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800 transition-colors ${uploading ? 'opacity-50 cursor-not-allowed' : 'hover:bg-brand-700'}`}>
                           <i className="fa-solid fa-floppy-disk mr-2 mt-0.5"></i> {modalMode === 'add' ? 'Lưu Dữ Liệu' : 'Cập Nhật'}
                         </button>
                       </div>
@@ -754,16 +814,24 @@
                           </div>
                         </div>
 
-                        <div className="flex-1 p-4 relative flex items-center justify-center">
+                        <div className="flex-1 p-4 relative flex flex-col items-center justify-center">
                           {previewData.link ? (
-                            <iframe src={getEmbedLink(previewData.link)} className="w-full h-full rounded-xl shadow-sm border border-slate-300 dark:border-slate-600 bg-white" title="Viewer" allowFullScreen></iframe>
+                            <>
+                              <iframe src={getEmbedLink(previewData.link)} className="w-full h-full rounded-xl shadow-sm border border-slate-300 dark:border-slate-600 bg-white" title="Viewer" allowFullScreen></iframe>
+                              {isGoogleDriveLink(previewData.link) && (
+                                <div className="mt-3 w-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 p-3 rounded-lg text-sm flex items-start gap-3 border border-blue-200 dark:border-blue-800/50">
+                                  <i className="fa-solid fa-circle-info mt-0.5"></i>
+                                  <p>Lưu ý: Nếu bạn thấy thông báo <strong>"Bạn cần có quyền truy cập"</strong> từ Google Drive, đó là do trình duyệt đang chặn cookie. Hãy bấm <strong>"Mở cửa sổ mới"</strong> ở góc trên hoặc dùng tính năng <strong>Upload File</strong> trực tiếp thay vì link Drive để xem liền mạch hơn.</p>
+                                </div>
+                              )}
+                            </>
                           ) : (
                             <div className="text-center bg-white dark:bg-slate-800 p-12 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 max-w-md">
                               <i className="fa-solid fa-link-slash text-5xl text-slate-300 dark:text-slate-600 mb-4"></i>
                               <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Chưa đính kèm file gốc</h3>
-                              <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Tài liệu này chưa có đường dẫn Google Drive hoặc SharePoint để hiển thị trực tiếp.</p>
+                              <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Tài liệu này chưa có đường dẫn hoặc file upload để hiển thị trực tiếp.</p>
                               <button onClick={() => { setIsPreviewModalOpen(false); openEditModal(previewData); }} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-semibold rounded-lg text-brand-700 dark:text-brand-400 bg-brand-100 dark:bg-brand-900/40 hover:bg-brand-200 dark:hover:bg-brand-900/60 transition-colors">
-                                Cập nhật liên kết ngay
+                                Cập nhật liên kết / Tải file ngay
                               </button>
                             </div>
                           )}
