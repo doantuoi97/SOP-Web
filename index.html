@@ -4,14 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SOP Master List - QA Dashboard</title>
-    <!-- Thư viện React & Tailwind -->
     <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- Cấu hình Tailwind Custom Colors, Fonts & Dark Mode -->
     <script>
         tailwind.config = {
             darkMode: 'class', // Kích hoạt Dark Mode dựa trên class 'dark' ở thẻ html
@@ -28,7 +26,6 @@
         }
     </script>
     
-    <!-- Google Font Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
     <style>
@@ -214,8 +211,9 @@
             };
           }, [latestSops]);
 
+          // TÍNH NĂNG MỚI: TỰ ĐỘNG SẮP XẾP CHỮ VÀ SỐ (NATURAL SORT)
           const filteredSops = useMemo(() => {
-            return latestSops.filter(sop => {
+            let result = latestSops.filter(sop => {
               const matchSearch = sop.code.toLowerCase().includes(searchTerm.toLowerCase()) || sop.name.toLowerCase().includes(searchTerm.toLowerCase());
               return matchSearch && 
                      (filters.type === 'All' || sop.type === filters.type) && 
@@ -223,6 +221,13 @@
                      (filters.dept === 'All' || sop.dept === filters.dept) && 
                      (filters.status === 'All' || sop.status === filters.status);
             });
+            
+            // Sắp xếp tự nhiên (Natural Sort) theo mã DOC CODE từ A-Z và tăng dần theo số
+            result.sort((a, b) => {
+              return a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: 'base' });
+            });
+
+            return result;
           }, [latestSops, searchTerm, filters]);
 
           useEffect(() => { setCurrentPage(1); }, [searchTerm, filters]);
@@ -344,7 +349,6 @@
             if ((url.includes('docs.google.com') || url.includes('drive.google.com')) && (url.includes('/edit') || url.includes('/view'))) {
                 return url.replace(/\/(edit|view).*$/, '/preview');
             }
-            // Các link Firebase Storage (thường là đuôi .pdf) hoặc các link tĩnh khác có thể nhúng thẳng
             return url;
           };
 
